@@ -3,8 +3,6 @@ import imutils
 import numpy as np
 from imutils import contours, perspective
 
-# from utils import save_vid
-
 savevid = False
 
 previewWindow = True
@@ -34,30 +32,24 @@ LK_params = {
 colour = np.random.randint(0, 255, (100, 3))
 
 
-def rescale_frame(frame, percent=75):
-    width = int(frame.shape[1] * percent / 100)
-    height = int(frame.shape[0] * percent / 100)
-    dim = (width, height)
-    return cv.resize(frame, dim, interpolation=cv.INTER_AREA)
-
-
 def check_cam_exists(cap):
-    valid_cams = []
-    # for i in range(2):
+    print('sss')
     cap = cv.VideoCapture(cap)
+
     if cap is None or not cap.isOpened():
         print('Warning: unable to open video source: ', cap)
+
         return False
     else:
-        # valid_cams.append(i)
         return True
 
 
 def vid_initialise(path):
+
     result = check_cam_exists(path)
+    print(result)
     if result:
         cap = cv.VideoCapture(path)
-
         cap.set(cv.CAP_PROP_BUFFERSIZE, 2)
         fps = cap.get(cv.CAP_PROP_FPS)
 
@@ -111,7 +103,7 @@ def get_box_coords(C, new_frame):
     return coords_array, center
 
 
-def make_mask(new_frame, old_gray, old_points):
+def make_mask_flow(new_frame, old_gray, old_points):
     new_frame_gray = cv.cvtColor(new_frame, cv.COLOR_BGR2GRAY)
     fgMask = backSub.apply(new_frame_gray)
     new_points, st, err = cv.calcOpticalFlowPyrLK(old_gray, new_frame_gray, old_points, None, **LK_params)
@@ -127,21 +119,26 @@ def make_mask(new_frame, old_gray, old_points):
 # create masks for drawing purposes
 trail_history = [[[(0, 0), (0, 0)] for j in range(trailLength)] for j in range(numPts)]
 
-# videoOut = save_vid(fps, old_frame)
-
 backSub = cv.createBackgroundSubtractorMOG2()
+
+frame_counter = 0
 
 
 def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
-    while True:
-        ret, new_frame = cap.read()
-        # new_frame = rescale_frame(new_frame, percent=75)
+    # get total frames calculate stream period
+    fps = cap.get(cv.CAP_PROP_FPS)
+    total_frames = fps * 10
+    frame_counter = 1
 
+    while frame_counter <= total_frames:
+
+        ret, new_frame = cap.read()
+        frame_counter += 1
         if not ret:
             break
 
         try:
-            new_frame_gray, new_points, st, err, mask, cnts = make_mask(new_frame, old_gray, old_points)
+            new_frame_gray, new_points, st, err, mask, cnts = make_mask_flow(new_frame, old_gray, old_points)
 
         except Exception as e:
             continue
@@ -184,12 +181,14 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
 
         # show the frames
         if previewWindow:
+            img = cv.resize(img, (int(img.shape[1] * 0.6), int(img.shape[0] * 0.6)), interpolation=cv.INTER_AREA)
             cv.imshow(cam_name, img)
 
         # if savevid:
         #     videoOut.write(img)
 
         # cv.imshow('FG Mask', fgMask)
+
         if cv.waitKey(1) & 0xFF == ord('d'):
             break
 
@@ -200,6 +199,9 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
         # if old_points < numPts, get new points
         if (numPts - len(old_points)) > 0:
             old_points = cv.goodFeaturesToTrack(old_gray, maxCorners=numPts, mask=crosshairmask, **shitomasi_params)
+
+    cap.release()
+    cv.destroyAllWindows()
 
 
 def main_bret(cam_name, caps):
