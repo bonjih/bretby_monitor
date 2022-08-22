@@ -1,11 +1,27 @@
+__author__ = ""
+__email__ = ""
+__phone__ = ""
+__license__ = "xxx"
+__version__ = "1.0.0"
+__maintainer__ = ""
+__status__ = "Dev"
+
+import time
+
 import cv2 as cv
 import imutils
 import numpy as np
 from imutils import contours, perspective
 
-savevid = False
+import global_conf_variables
+from data_processing import bret_loc_data
+from utils.save_vid import vid_save
 
-previewWindow = True
+values = global_conf_variables.get_values()
+
+stream_time_sec = values[1]
+savevid = values[2]
+previewWindow = values[3]
 
 # visualization parameters
 numPts = 1  # max number of points to track
@@ -32,50 +48,32 @@ LK_params = {
 colour = np.random.randint(0, 255, (100, 3))
 
 
-def check_cam_exists(cap):
-    print('sss')
-    cap = cv.VideoCapture(cap)
-
-    if cap is None or not cap.isOpened():
-        print('Warning: unable to open video source: ', cap)
-
-        return False
-    else:
-        return True
-
-
 def vid_initialise(path):
+    cap = cv.VideoCapture(path)
+    cap.set(cv.CAP_PROP_BUFFERSIZE, 2)
+    fps = cap.get(cv.CAP_PROP_FPS)
 
-    result = check_cam_exists(path)
-    print(result)
-    if result:
-        cap = cv.VideoCapture(path)
-        cap.set(cv.CAP_PROP_BUFFERSIZE, 2)
-        fps = cap.get(cv.CAP_PROP_FPS)
+    # get the first frame
+    _, old_frame = cap.read()
+    # old_frame = rescale_frame(old_frame, percent=75)
+    old_gray = cv.cvtColor(old_frame, cv.COLOR_BGR2GRAY)
 
-        # get the first frame
-        _, old_frame = cap.read()
-        # old_frame = rescale_frame(old_frame, percent=75)
-        old_gray = cv.cvtColor(old_frame, cv.COLOR_BGR2GRAY)
+    # get resolution of video
+    res_x = len(old_frame[0])
+    res_y = len(old_frame)
 
-        # get resolution of video
-        res_x = len(old_frame[0])
-        res_y = len(old_frame)
-
-        new_frame = np.zeros((res_y, res_x), dtype=float)
-        roi_xywh = ([1344, 702], [1344, 702], [1344, 702], [1344, 702])
-        center = (0, 0)
-        old_points, crosshairmask = create_crosshairs(roi_xywh, center, old_frame, old_gray)
-        return fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask
-    else:
-        print('Camera  not available')
+    new_frame = np.zeros((res_y, res_x), dtype=float)
+    roi_xywh = ([1344, 702], [1344, 702], [1344, 702], [1344, 702])
+    center = (0, 0)
+    old_points, crosshairmask = create_crosshairs_flow(roi_xywh, center, old_frame, old_gray)
+    return fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask
 
 
-def create_crosshairs(roi_xywh, center, old_frame, old_gray):
+def create_crosshairs_flow(roi_xywh, center, old_frame, old_gray):
     crosshair_bottom = int(center[0])  # there always need to be a point, otherwise video stops, exception
     crosshair_top = int(roi_xywh[0][1])
     crosshair_left = int(roi_xywh[2][1])
-    crosshair_right = int(roi_xywh[1][0])  #
+    crosshair_right = int(roi_xywh[1][0])
     crosshairmask = np.zeros(old_frame.shape[:2], dtype="uint8")
     cv.rectangle(crosshairmask, (crosshair_left, crosshair_top), (crosshair_right, crosshair_bottom), 255, -1)
     old_points = cv.goodFeaturesToTrack(old_gray, maxCorners=numPts, mask=crosshairmask, **shitomasi_params)
@@ -83,14 +81,14 @@ def create_crosshairs(roi_xywh, center, old_frame, old_gray):
 
 
 def get_hsv_flow():
-    # hsv_low = np.array([0, 73, 96])
-    # hsv_up = np.array([31, 255, 255])
+    # hsv_low = np.array([22, 93, 0])
+    # hsv_up = np.array([40, 150, 255])
     hsv_low = np.array([20, 100, 100])
     hsv_up = np.array([30, 255, 255])
     return hsv_low, hsv_up
 
 
-def get_box_coords(C, new_frame):
+def get_box_coords_flow(C, new_frame):
     box = cv.minAreaRect(C)
     M = cv.moments(C)
     box = cv.boxPoints(box) if imutils.is_cv2() else cv.boxPoints(box)
@@ -98,6 +96,7 @@ def get_box_coords(C, new_frame):
     (tl, tr, br, bl) = box
     coords_array = (tl, tr, br, bl)
     center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+
     cv.circle(new_frame, center, 5, (0, 0, 255), -1)
     cv.drawContours(new_frame, [box.astype("int")], -1, (0, 255, 255), 2)
     return coords_array, center
@@ -109,11 +108,14 @@ def make_mask_flow(new_frame, old_gray, old_points):
     new_points, st, err = cv.calcOpticalFlowPyrLK(old_gray, new_frame_gray, old_points, None, **LK_params)
     hsv_lower, hsv_upper = get_hsv_flow()
     hsv = cv.cvtColor(new_frame, cv.COLOR_BGR2HSV)
-    mask = cv.inRange(hsv, hsv_lower, hsv_upper)
-    cnts = cv.findContours(mask.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    mask_flow = cv.inRange(hsv, hsv_lower, hsv_upper)
+    mask_flow2 = np.zeros_like(mask_flow)
+    cv.line(mask_flow2, pt1=(750, 100),  pt2=(750, 800), color=(255, 255, 255), thickness=430)
+    mask_flow2 = cv.bitwise_and(mask_flow, mask_flow, mask=mask_flow2)
+    cnts = cv.findContours(mask_flow2.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     cnts = imutils.grab_contours(cnts)
     (cnts, _) = contours.sort_contours(cnts)
-    return new_frame_gray, new_points, st, err, mask, cnts
+    return new_frame_gray, new_points, st, err, mask_flow2, cnts
 
 
 # create masks for drawing purposes
@@ -124,32 +126,35 @@ backSub = cv.createBackgroundSubtractorMOG2()
 frame_counter = 0
 
 
-def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
+def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask_flow, cam_name):
+    bret_coords = []
+
     # get total frames calculate stream period
     fps = cap.get(cv.CAP_PROP_FPS)
-    total_frames = fps * 10
+    total_frames = fps * stream_time_sec
     frame_counter = 1
+    video_out = vid_save(fps, old_frame)
 
     while frame_counter <= total_frames:
 
         ret, new_frame = cap.read()
         frame_counter += 1
         if not ret:
-            break
+            pass
 
         try:
-            new_frame_gray, new_points, st, err, mask, cnts = make_mask_flow(new_frame, old_gray, old_points)
+            new_frame_gray, new_points, st, err, mask_flow, cnts = make_mask_flow(new_frame, old_gray, old_points)
 
         except Exception as e:
             continue
 
         for C in cnts:
 
-            if cv.contourArea(C) < 300:
+            if cv.contourArea(C) < 500:
                 continue
 
-            coords_array, center = get_box_coords(C, new_frame)
-            create_crosshairs(coords_array, center, old_frame, old_gray)
+            coords_array, center = get_box_coords_flow(C, new_frame)
+            create_crosshairs_flow(coords_array, center, old_frame, old_gray)
 
         # select good points
         if old_points is not None:
@@ -177,6 +182,14 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
             trail_history[i].pop()
             new_frame = cv.circle(new_frame, trail_history[i][0][0], pointSize, (255, 0, 255), -1)
 
+            bret_coords.append(trail_history[i][0][0])
+            bret_coords.append(cam_name)
+            # add time of entry to detect if coords are changing rapidly
+            bret_coords.append(time.time())
+            t0 = bret_coords[2]
+            t1 = bret_coords[-1]
+            bret_coords.append(t1 - t0)
+
         img = cv.add(new_frame, trailMask)
 
         # show the frames
@@ -184,8 +197,8 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
             img = cv.resize(img, (int(img.shape[1] * 0.6), int(img.shape[0] * 0.6)), interpolation=cv.INTER_AREA)
             cv.imshow(cam_name, img)
 
-        # if savevid:
-        #     videoOut.write(img)
+        if savevid:
+            video_out.write(img)
 
         # cv.imshow('FG Mask', fgMask)
 
@@ -198,12 +211,16 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
 
         # if old_points < numPts, get new points
         if (numPts - len(old_points)) > 0:
-            old_points = cv.goodFeaturesToTrack(old_gray, maxCorners=numPts, mask=crosshairmask, **shitomasi_params)
-
+            old_points = cv.goodFeaturesToTrack(old_gray, maxCorners=numPts, mask=crosshairmask_flow,
+                                                **shitomasi_params)
     cap.release()
     cv.destroyAllWindows()
 
+    return bret_coords
+
 
 def main_bret(cam_name, caps):
-    fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask = vid_initialise(caps)
-    bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name)
+    fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask_flow = vid_initialise(caps)
+    bret_coord = bret_flow(cap, old_gray, old_points, old_frame, crosshairmask_flow, cam_name)
+
+    bret_loc_data(bret_coord)
