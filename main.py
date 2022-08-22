@@ -1,41 +1,46 @@
-import pandas as pd
-import cv2
+__author__ = ""
+__email__ = ""
+__phone__ = ""
+__license__ = "xxx"
+__version__ = "1.0.0"
+__maintainer__ = ""
+__status__ = "Dev"
 
-import db_manager
+import time
+import pandas as pd
+import cv2 as cv
+
 from bretby_detect import main_bret
 import global_conf_variables
+from stream_manager import probe_stream
 
 values = global_conf_variables.get_values()
 
 cams = values[0]
-db_user = values[2]
-db_pw = values[3]
-db_server = values[4]
-db_table = values[5]
-
-
-def db_manager_controller(dbfields, cv_data):
-    sql = db_manager.SQL(values[2], values[3], values[4], values[5])
-    sql.image_data(cv_data, dbfields)
 
 
 def main(cam_name, camID):
-    cv2.namedWindow(cam_name)
+    cv.namedWindow(cam_name)
     main_bret(cam_name, camID)
-
-
-def db_manager_controller(db_fields, cv_img_data):
-    pass
 
 
 if __name__ == "__main__":
     while True:
-        df = pd.read_csv(cams)
-        for index, row in df.iterrows():
-            print(row['cam_name'], row['address'])
-            main(row['cam_name'], row['address'])
+        try:
+            df = pd.read_csv(cams)
+            print('Looping through camera list......')
 
-        # db_manager_controller(db_fields, cv_img_data)
+            for index, row in df.iterrows():
+                print()
+                print(row['cam_name'], '->', row['address'])
+                result = probe_stream(row['address'])
+                print(result)
+                if result:
+                    main(row['cam_name'], row['address'])
+                    time.sleep(3)
+                else:
+                    print(result)
+                    print(f"Camera {row['cam_name']} not available, moving to next camera...")
 
-
-
+        except Exception as e:
+            print(e)
