@@ -22,26 +22,15 @@ class SQL:
         self.engine = create_engine("mssql+pyodbc://@%s" % 'SQLEXPRESS')
         self.conn = pyodbc.connect(user=user, password=pwd, host=host, database=db, driver=driver, server=server)
 
-    def check_entry_exist(self, img_date):
-        cur = self.conn.cursor()
-        cur.execute('SELECT file_name FROM tailgate_image_analysis WHERE file_name = ?', img_date)
-        exits = cur.fetchone()
-        if exits is None:
-            return False
-        if img_date == exits[0]:
-            return True
-        if img_date != exits[0]:
-            return False
-
-    def insert_db(self, img_data, db_fields):
+    def insert_db(self, data, db_fields):
         cur = self.conn.cursor()
         cur.execute(
-            "INSERT INTO tailgate_image_analysis (date_time) VALUES (CURRENT_TIMESTAMP)", )
-        df = pd.DataFrame(img_data)
+            "INSERT INTO bretby_monitor (date_time_create) VALUES (CURRENT_TIMESTAMP)", )
+        df = pd.DataFrame(data)
         df = df.transpose()
         df.columns = db_fields
-        df.to_sql('tailgate_image_analysis', con=self.engine, if_exists='append', index=False)
+        df.to_sql('bretby_monitor', con=self.engine, if_exists='append', index=False)
 
-        print("[{}], with ID [{}] has been added to the database".format(img_data[8], img_data[11]))
+
 
 
