@@ -33,11 +33,12 @@ if __name__ == "__main__":
             for index, row in df.iterrows():
                 print()
                 print(row['cam_name'], '->', row['address'])
-                result = probe_stream(row['address'])
-                print(result)
+                result = probe_stream(row['address'])  # comment out when using MP4
+
+                # result = True # uncomment out when using MP4
                 if result:
                     main(row['cam_name'], row['address'])
-                    time.sleep(3)
+                    time.sleep(2)
                 else:
                     print(result)
                     print(f"Camera {row['cam_name']} not available, moving to next camera...")
