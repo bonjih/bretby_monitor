@@ -1,14 +1,7 @@
 {
-	"date_time": "",
-	"cam_dist_to_gate": "",
-	"chain_dist_to_gate": "",
-	"tailgate_coord_x": "",
-	"tailgate_coord_y": "",
-        "distance_lead": "",
-	"distance_lag": "",
-	"file_size": "",
-	"file_name": "",
-	"no_pixels": "",
 	"date_time_create": "",
-        "image_id":  ""
+	"camera": "",
+	"bretby_position": "",
+	"location_in_trough": "",
+	"per_coal_in_trough_loc": ""
 }
