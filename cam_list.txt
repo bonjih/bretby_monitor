@@ -1,0 +1,7 @@
+cam_name,address
+MNM_PRS_003,rtsp://10.61.41.4:11011/mnm2/shield/003/hd
+MNM_PRS_010,rtsp://10.61.41.4:11011/mnm2/shield/010/hd
+MNM_PRS_015,rtsp://10.61.41.4:11011/mnm2/shield/015/hd
+MNM_PRS_042,rtsp://10.61.41.4:11011/mnm2/shield/042/hd
+MNM_PRS_082,rtsp://10.61.41.4:11011/mnm2/shield/082/hd
+MNM_PRS_114,rtsp://10.61.41.4:11011/mnm2/shield/114/hd

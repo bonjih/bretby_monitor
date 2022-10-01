@@ -26,22 +26,21 @@ def main(cam_name, camID):
 
 if __name__ == "__main__":
     while True:
-        try:
-            df = pd.read_csv(cams)
-            print('Looping through camera list......')
+        #try:
+        df = pd.read_csv(cams)
 
-            for index, row in df.iterrows():
-                print()
-                print(row['cam_name'], '->', row['address'])
-                result = probe_stream(row['address'])  # comment out when using MP4
+        print('Looping through camera list......')
 
-                # result = True # uncomment out when using MP4
-                if result:
-                    main(row['cam_name'], row['address'])
-                    time.sleep(2)
-                else:
-                    print(result)
-                    print(f"Camera {row['cam_name']} not available, moving to next camera...")
+        for index, row in df.iterrows():
+            print()
+            print(row['cam_name'], '->', row['address'])
+            result = probe_stream(row['address'])  # comment out when using MP4
+            #result = True  # uncomment out when using MP4
+            if result is not None or result:
+                main(row['cam_name'], row['address'])
+                time.sleep(2)
+            else:
+                print(f"Camera {row['cam_name']} not available, moving to next camera...")
 
-        except Exception as e:
-            print(e)
+        # except Exception as e:
+        #     print(e)

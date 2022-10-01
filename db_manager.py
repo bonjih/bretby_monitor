@@ -22,14 +22,13 @@ class SQL:
         self.engine = create_engine("mssql+pyodbc://@%s" % 'SQLEXPRESS')
         self.conn = pyodbc.connect(user=user, password=pwd, host=host, database=db, driver=driver, server=server)
 
-    def insert_db(self, data, db_fields):
-        cur = self.conn.cursor()
-        cur.execute(
-            "INSERT INTO bretby_monitor (date_time_create) VALUES (CURRENT_TIMESTAMP)", )
-        df = pd.DataFrame(data)
-        df = df.transpose()
-        df.columns = db_fields
-        df.to_sql('bretby_monitor', con=self.engine, if_exists='append', index=False)
+    def insert(self, data, db_fields):
+        # cur = self.conn.cursor()
+        # cur.execute(
+        #     "INSERT INTO bretby_monitor (date_time_create) VALUES (CURRENT_TIMESTAMP)", )
+        data.columns = db_fields
+        print(data)
+        #data.to_sql('bretby_monitor', con=self.engine, if_exists='append', index=False)
 
 
 

@@ -7,20 +7,19 @@ __maintainer__ = ""
 __status__ = "Dev"
 
 import time
-
+import re
 import cv2 as cv
 import imutils
 import numpy as np
+import pandas as pd
 from imutils import contours, perspective
-
-import global_conf_variables
-from data_processing import bret_loc_data
+import global_conf_variables, data_processing
 from utils.save_vid import vid_save
 
 values = global_conf_variables.get_values()
 
 stream_time_sec = values[1]
-savevid = values[2]
+saveVid = values[2]
 previewWindow = values[3]
 
 # visualization parameters
@@ -28,7 +27,7 @@ numPts = 1  # max number of points to track
 trailLength = 100  # how many frames to keep a fading trail behind a tracked point to show motion
 trailThickness = 8  # thickness of the trail to draw behind the target
 trailFade = 10  # the intensity at which the trail fades
-pointSize = 7  # pixel radius of the circle to draw over tracked points
+pointSize = 5  # pixel radius of the circle to draw over tracked points
 
 # params for Shi-Tomasi corner detection
 shitomasi_params = {
@@ -39,7 +38,7 @@ shitomasi_params = {
 
 # params for Lucas-Kanade optical flow
 LK_params = {
-    "winSize": (15, 15),
+    "winSize": (30, 30),
     "maxLevel": 10,
     "criteria": (cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 0.03)
 }
@@ -53,23 +52,28 @@ def vid_initialise(path):
     cap.set(cv.CAP_PROP_BUFFERSIZE, 2)
     fps = cap.get(cv.CAP_PROP_FPS)
 
-    # get the first frame
-    _, old_frame = cap.read()
-    # old_frame = rescale_frame(old_frame, percent=75)
-    old_gray = cv.cvtColor(old_frame, cv.COLOR_BGR2GRAY)
+    try:
+        # get the first frame
+        _, old_frame = cap.read()
+        old_gray = cv.cvtColor(old_frame, cv.COLOR_BGR2GRAY)
 
-    # get resolution of video
-    res_x = len(old_frame[0])
-    res_y = len(old_frame)
+        # get resolution of video
+        res_x = len(old_frame[0])
+        res_y = len(old_frame)
 
-    new_frame = np.zeros((res_y, res_x), dtype=float)
-    roi_xywh = ([1344, 702], [1344, 702], [1344, 702], [1344, 702])
-    center = (0, 0)
-    old_points, crosshairmask = create_crosshairs_flow(roi_xywh, center, old_frame, old_gray)
-    return fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask
+        new_frame = np.zeros((res_y, res_x), dtype=float)
+        roi_xywh = ([1344, 702], [1344, 702], [1344, 702], [1344, 702])
+        default_pos = (900, 302)
+        old_points, crosshairmask = create_crosshairs(roi_xywh, default_pos, old_frame, old_gray)
+
+        return fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask
 
 
-def create_crosshairs_flow(roi_xywh, center, old_frame, old_gray):
+    except Exception as e:
+        print(e)
+
+
+def create_crosshairs(roi_xywh, center, old_frame, old_gray):
     crosshair_bottom = int(center[0])  # there always need to be a point, otherwise video stops, exception
     crosshair_top = int(roi_xywh[0][1])
     crosshair_left = int(roi_xywh[2][1])
@@ -81,14 +85,16 @@ def create_crosshairs_flow(roi_xywh, center, old_frame, old_gray):
 
 
 def get_hsv_flow():
-    # hsv_low = np.array([22, 93, 0])
-    # hsv_up = np.array([40, 150, 255])
-    hsv_low = np.array([20, 100, 100])
-    hsv_up = np.array([30, 255, 255])
+    hsv_low = np.array([0, 73, 96])
+    hsv_up = np.array([31, 255, 255])
+    # hsv_low = np.array([20, 100, 100])
+    # hsv_up = np.array([30, 255, 255])
+    # hsv_low = np.array([0, 0, 216])
+    # hsv_up = np.array([26, 48, 255])
     return hsv_low, hsv_up
 
 
-def get_box_coords_flow(C, new_frame):
+def get_box_coords(C, new_frame):
     box = cv.minAreaRect(C)
     M = cv.moments(C)
     box = cv.boxPoints(box) if imutils.is_cv2() else cv.boxPoints(box)
@@ -96,26 +102,22 @@ def get_box_coords_flow(C, new_frame):
     (tl, tr, br, bl) = box
     coords_array = (tl, tr, br, bl)
     center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
-
     cv.circle(new_frame, center, 5, (0, 0, 255), -1)
     cv.drawContours(new_frame, [box.astype("int")], -1, (0, 255, 255), 2)
     return coords_array, center
 
 
-def make_mask_flow(new_frame, old_gray, old_points):
+def make_mask(new_frame, old_gray, old_points):
     new_frame_gray = cv.cvtColor(new_frame, cv.COLOR_BGR2GRAY)
     fgMask = backSub.apply(new_frame_gray)
     new_points, st, err = cv.calcOpticalFlowPyrLK(old_gray, new_frame_gray, old_points, None, **LK_params)
     hsv_lower, hsv_upper = get_hsv_flow()
     hsv = cv.cvtColor(new_frame, cv.COLOR_BGR2HSV)
-    mask_flow = cv.inRange(hsv, hsv_lower, hsv_upper)
-    mask_flow2 = np.zeros_like(mask_flow)
-    cv.line(mask_flow2, pt1=(750, 100),  pt2=(750, 800), color=(255, 255, 255), thickness=430)
-    mask_flow2 = cv.bitwise_and(mask_flow, mask_flow, mask=mask_flow2)
-    cnts = cv.findContours(mask_flow2.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    mask = cv.inRange(hsv, hsv_lower, hsv_upper)
+    cnts = cv.findContours(mask.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     cnts = imutils.grab_contours(cnts)
     (cnts, _) = contours.sort_contours(cnts)
-    return new_frame_gray, new_points, st, err, mask_flow2, cnts
+    return new_frame_gray, new_points, st, err, mask, cnts
 
 
 # create masks for drawing purposes
@@ -123,38 +125,74 @@ trail_history = [[[(0, 0), (0, 0)] for j in range(trailLength)] for j in range(n
 
 backSub = cv.createBackgroundSubtractorMOG2()
 
-frame_counter = 0
+bret_coords_all = []
+bret_data = []
 
 
-def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask_flow, cam_name):
-    bret_coords = []
+def format_df():
+    df = [l.split("' ") for l in ' '.join(map(str, bret_data)).split(' | ')]
+    df = pd.DataFrame(df)
+    df = pd.concat([df[0].str.split(' ', expand=True)], axis=1)
+    df.drop([5], axis=1, inplace=True)
+    df.rename(columns={0: 'x', 1: 'y', 2: 'Camera', 3: 't0', 4: 't1'}, inplace=True)
+    return df
 
+
+def format_data(i, cam_name):
+    bret_coords_all.append(trail_history[i][0][0])
+    bret_coords_all.append(cam_name)
+
+    # add time of entry to detect if coords are changing rapidly
+    bret_coords_all.append(time.time())
+    t0 = bret_coords_all[2]
+    t1 = bret_coords_all[-1]
+    bret_coords_all.append(t1 - t0)
+
+    spt_1 = [l.split(',(') for l in ' '.join(map(str, bret_coords_all)).split('(')]
+    spt_2 = [l.split(')') for l in ' '.join(map(str, spt_1[-1])).split(',')]
+    spt_3 = [l for l in re.split(r'(\s|\,)', spt_2[1][1].strip()) if l]
+
+    x = spt_2[1][0][-3:]
+    y = spt_2[0][-1]
+    camera = spt_3[0]
+    time_0 = spt_3[2]
+    time_1 = spt_3[4] + ' |'
+
+    bret_data.append(x)
+    bret_data.append(y)
+    bret_data.append(camera)
+    bret_data.append(time_0)
+    bret_data.append(time_1)
+
+
+def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
     # get total frames calculate stream period
     fps = cap.get(cv.CAP_PROP_FPS)
-    total_frames = fps * stream_time_sec
+    total_frames = stream_time_sec * 2.1
     frame_counter = 1
     video_out = vid_save(fps, old_frame)
 
     while frame_counter <= total_frames:
-
         ret, new_frame = cap.read()
         frame_counter += 1
+
         if not ret:
-            pass
+            break
 
         try:
-            new_frame_gray, new_points, st, err, mask_flow, cnts = make_mask_flow(new_frame, old_gray, old_points)
+            new_frame_gray, new_points, st, err, mask, cnts = make_mask(new_frame, old_gray, old_points)
 
         except Exception as e:
+            print(e)
             continue
 
         for C in cnts:
 
-            if cv.contourArea(C) < 500:
+            if cv.contourArea(C) < 250:
                 continue
 
-            coords_array, center = get_box_coords_flow(C, new_frame)
-            create_crosshairs_flow(coords_array, center, old_frame, old_gray)
+            coords_array, center = get_box_coords(C, new_frame)
+            create_crosshairs(coords_array, center, old_frame, old_gray)
 
         # select good points
         if old_points is not None:
@@ -181,27 +219,19 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask_flow, cam_name
 
             trail_history[i].pop()
             new_frame = cv.circle(new_frame, trail_history[i][0][0], pointSize, (255, 0, 255), -1)
-
-            bret_coords.append(trail_history[i][0][0])
-            bret_coords.append(cam_name)
-            # add time of entry to detect if coords are changing rapidly
-            bret_coords.append(time.time())
-            t0 = bret_coords[2]
-            t1 = bret_coords[-1]
-            bret_coords.append(t1 - t0)
+            format_data(i, cam_name)
 
         img = cv.add(new_frame, trailMask)
 
         # show the frames
         if previewWindow:
-            img = cv.resize(img, (int(img.shape[1] * 0.6), int(img.shape[0] * 0.6)), interpolation=cv.INTER_AREA)
+            img = cv.resize(img, (int(img.shape[1] * 0.7), int(img.shape[0] * 0.7)), interpolation=cv.INTER_AREA)
             cv.imshow(cam_name, img)
 
-        if savevid:
+        if saveVid:
             video_out.write(img)
 
         # cv.imshow('FG Mask', fgMask)
-
         if cv.waitKey(1) & 0xFF == ord('d'):
             break
 
@@ -211,16 +241,18 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask_flow, cam_name
 
         # if old_points < numPts, get new points
         if (numPts - len(old_points)) > 0:
-            old_points = cv.goodFeaturesToTrack(old_gray, maxCorners=numPts, mask=crosshairmask_flow,
-                                                **shitomasi_params)
+            old_points = cv.goodFeaturesToTrack(old_gray, maxCorners=numPts, mask=crosshairmask, **shitomasi_params)
+
     cap.release()
     cv.destroyAllWindows()
 
-    return bret_coords
-
 
 def main_bret(cam_name, caps):
-    fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask_flow = vid_initialise(caps)
-    bret_coord = bret_flow(cap, old_gray, old_points, old_frame, crosshairmask_flow, cam_name)
+    try:
+        fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask = vid_initialise(caps)
+        bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name)
+    except Exception as e:
+        print(e)
 
-    bret_loc_data(bret_coord)
+    df = format_df()
+    data_processing.bret_loc_data(df)
