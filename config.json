@@ -1,0 +1,12 @@
+{
+    "cam_path": "cam_list.txt",
+	  "stream_time_sec": 5000,
+    "save_video": "False",
+    "previewWindow": "True",
+    "user": "",
+    "passwd": "",
+    "host": "",
+    "database": "",
+    "driver": "SQL Server",
+    "server": "localhost\\SQLEXPRESS"
+}
