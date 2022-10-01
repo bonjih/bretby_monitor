@@ -22,7 +22,10 @@ def probe_stream(filename):
     p.wait()
     probe_dct = json.loads(out)
 
-    if probe_dct:
-        return True
-    elif err:
-        print(err)
+    try:
+        if probe_dct:
+            return True
+        elif err:
+            print(err)
+    except Exception as e:
+        print(e)
