@@ -38,7 +38,7 @@ shitomasi_params = {
 
 # params for Lucas-Kanade optical flow
 LK_params = {
-    "winSize": (30, 30),
+    "winSize": (9, 9),
     "maxLevel": 10,
     "criteria": (cv.TERM_CRITERIA_EPS | cv.TERM_CRITERIA_COUNT, 10, 0.03)
 }
@@ -63,17 +63,19 @@ def vid_initialise(path):
 
         new_frame = np.zeros((res_y, res_x), dtype=float)
         roi_xywh = ([1344, 702], [1344, 702], [1344, 702], [1344, 702])
-        default_pos = (900, 302)
+        default_pos = (0, 0)
         old_points, crosshairmask = create_crosshairs(roi_xywh, default_pos, old_frame, old_gray)
 
         return fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask
-
 
     except Exception as e:
         print(e)
 
 
 def create_crosshairs(roi_xywh, center, old_frame, old_gray):
+    """
+    keeps optical flow position inline with HSV parameters
+    """
     crosshair_bottom = int(center[0])  # there always need to be a point, otherwise video stops, exception
     crosshair_top = int(roi_xywh[0][1])
     crosshair_left = int(roi_xywh[2][1])
@@ -95,6 +97,13 @@ def get_hsv_flow():
 
 
 def get_box_coords(C, new_frame):
+    """
+    creates bounding boxes baes on HSV parameters
+    returens BB centre and coords array
+    :param C:
+    :param new_frame:
+    :return:
+    """
     box = cv.minAreaRect(C)
     M = cv.moments(C)
     box = cv.boxPoints(box) if imutils.is_cv2() else cv.boxPoints(box)
@@ -138,31 +147,36 @@ def format_df():
     return df
 
 
-def format_data(i, cam_name):
-    bret_coords_all.append(trail_history[i][0][0])
-    bret_coords_all.append(cam_name)
+def format_data(i, cam_name, res, tup_1, tup_2):
 
-    # add time of entry to detect if coords are changing rapidly
-    bret_coords_all.append(time.time())
-    t0 = bret_coords_all[2]
-    t1 = bret_coords_all[-1]
-    bret_coords_all.append(t1 - t0)
+    if not res:
 
-    spt_1 = [l.split(',(') for l in ' '.join(map(str, bret_coords_all)).split('(')]
-    spt_2 = [l.split(')') for l in ' '.join(map(str, spt_1[-1])).split(',')]
-    spt_3 = [l for l in re.split(r'(\s|\,)', spt_2[1][1].strip()) if l]
+        bret_coords_all.append(trail_history[i][0][0])
+        bret_coords_all.append(cam_name)
 
-    x = spt_2[1][0][-3:]
-    y = spt_2[0][-1]
-    camera = spt_3[0]
-    time_0 = spt_3[2]
-    time_1 = spt_3[4] + ' |'
+        # add time of entry to detect if coords are changing rapidly
+        bret_coords_all.append(time.time())
 
-    bret_data.append(x)
-    bret_data.append(y)
-    bret_data.append(camera)
-    bret_data.append(time_0)
-    bret_data.append(time_1)
+        t0 = bret_coords_all[2]
+        t1 = bret_coords_all[-1]
+
+        bret_coords_all.append(t1 - t0)
+
+        spt_1 = [l.split(',(') for l in ' '.join(map(str, bret_coords_all)).split('(')]
+        spt_2 = [l.split(')') for l in ' '.join(map(str, spt_1[-1])).split(',')]
+        spt_3 = [l for l in re.split(r'(\s|\,)', spt_2[1][1].strip()) if l]
+
+        x = spt_2[1][0][-3:]
+        y = spt_2[0][-1]
+        camera = spt_3[0]
+        time_0 = spt_3[2]
+        time_1 = spt_3[4] + ' |'
+
+        bret_data.append(x)
+        bret_data.append(y)
+        bret_data.append(camera)
+        bret_data.append(time_0)
+        bret_data.append(time_1)
 
 
 def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
@@ -181,9 +195,10 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
 
         try:
             new_frame_gray, new_points, st, err, mask, cnts = make_mask(new_frame, old_gray, old_points)
-
         except Exception as e:
-            print(e)
+            if e:
+                print('dd')
+
             continue
 
         for C in cnts:
@@ -208,22 +223,27 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
             linepts = [(int(a), int(b)), (int(c), int(d))]
 
             trail_history[i].insert(0, linepts)
-
-            pointColor = colour[i].tolist()
+            point_color = colour[i].tolist()
 
             for j in range(len(trail_history[i])):
-                trailColor = [int(pointColor[0] - (trailFade * j)), int(pointColor[1] - (trailFade * j)),
-                              int(pointColor[2] - (trailFade * j))]  # fading colors
+                trailColor = [int(point_color [0] - (trailFade * j)), int(point_color[1] - (trailFade * j)),
+                              int(point_color [2] - (trailFade * j))]  # fading colors
                 trailMask = cv.line(trailMask, trail_history[i][j][0], trail_history[i][j][1], trailColor,
                                     thickness=trailThickness, lineType=cv.LINE_AA)
 
+            # compare tuples in trail history
+            # find if pixel movement is significant
+            tup_1 = trail_history[i][0][0]
+            tup_2 = trail_history[i][0][-1]
+
+            res = all(map(lambda x, y: x > y, tup_1, tup_2))
+
             trail_history[i].pop()
             new_frame = cv.circle(new_frame, trail_history[i][0][0], pointSize, (255, 0, 255), -1)
-            format_data(i, cam_name)
+            format_data(i, cam_name, res, tup_1, tup_1)
 
         img = cv.add(new_frame, trailMask)
 
-        # show the frames
         if previewWindow:
             img = cv.resize(img, (int(img.shape[1] * 0.7), int(img.shape[0] * 0.7)), interpolation=cv.INTER_AREA)
             cv.imshow(cam_name, img)
