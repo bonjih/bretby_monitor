@@ -47,6 +47,13 @@ LK_params = {
 colour = np.random.randint(0, 255, (100, 3))
 
 
+def calcAreaPercent(tl, tr, bl, C):
+    box_area = (tr[0] - tl[0]) * (bl[1] - tl[1])
+    topmost = tuple(C[C[:, :, 1].argmin()][0])
+    percent = 1 - ((topmost[1] - 340) / 740)
+    return box_area, percent
+
+
 def vid_initialise(path):
     cap = cv.VideoCapture(path)
     cap.set(cv.CAP_PROP_BUFFERSIZE, 2)
@@ -87,13 +94,17 @@ def create_crosshairs(roi_xywh, center, old_frame, old_gray):
 
 
 def get_hsv_flow():
-    hsv_low = np.array([0, 73, 96])
-    hsv_up = np.array([31, 255, 255])
+    # hsv_low = np.array([0, 73, 96])
+    # hsv_up = np.array([31, 255, 255])
     # hsv_low = np.array([20, 100, 100])
     # hsv_up = np.array([30, 255, 255])
     # hsv_low = np.array([0, 0, 216])
     # hsv_up = np.array([26, 48, 255])
-    return hsv_low, hsv_up
+    track1hsv = (np.array([121, 0, 16]), np.array([137, 255, 180]))
+    track2hsv = (np.array([0, 0, 94]), np.array([179, 26, 189]))
+    bretbyhsv = (np.array([20, 100, 100]), np.array([30, 255, 255]))
+
+    return track1hsv, track2hsv, bretbyhsv
 
 
 def get_box_coords(C, new_frame):
@@ -109,24 +120,65 @@ def get_box_coords(C, new_frame):
     box = cv.boxPoints(box) if imutils.is_cv2() else cv.boxPoints(box)
     box = perspective.order_points(box)
     (tl, tr, br, bl) = box
+    box_area, percent = calcAreaPercent(tl, tr, bl, C)
     coords_array = (tl, tr, br, bl)
     center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
     cv.circle(new_frame, center, 5, (0, 0, 255), -1)
     cv.drawContours(new_frame, [box.astype("int")], -1, (0, 255, 255), 2)
-    return coords_array, center
+    return coords_array, center, box_area, percent, box, tr
+
+
+#
+# def make_mask(new_frame, old_gray, old_points):
+#     new_frame_gray = cv.cvtColor(new_frame, cv.COLOR_BGR2GRAY)
+#     fgMask = backSub.apply(new_frame_gray)
+#     new_points, st, err = cv.calcOpticalFlowPyrLK(old_gray, new_frame_gray, old_points, None, **LK_params)
+#     hsv_lower, hsv_upper = get_hsv_flow()
+#     hsv = cv.cvtColor(new_frame, cv.COLOR_BGR2HSV)
+#     mask = cv.inRange(hsv, hsv_lower, hsv_upper)
+#     cnts = cv.findContours(mask.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+#     cnts = imutils.grab_contours(cnts)
+#     (cnts, _) = contours.sort_contours(cnts)
+#     return new_frame_gray, new_points, st, err, mask, cnts
 
 
 def make_mask(new_frame, old_gray, old_points):
     new_frame_gray = cv.cvtColor(new_frame, cv.COLOR_BGR2GRAY)
     fgMask = backSub.apply(new_frame_gray)
     new_points, st, err = cv.calcOpticalFlowPyrLK(old_gray, new_frame_gray, old_points, None, **LK_params)
-    hsv_lower, hsv_upper = get_hsv_flow()
+    track1hsv, track2hsv, bretbyhsv = get_hsv_flow()
     hsv = cv.cvtColor(new_frame, cv.COLOR_BGR2HSV)
-    mask = cv.inRange(hsv, hsv_lower, hsv_upper)
-    cnts = cv.findContours(mask.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-    cnts = imutils.grab_contours(cnts)
-    (cnts, _) = contours.sort_contours(cnts)
-    return new_frame_gray, new_points, st, err, mask, cnts
+
+    track1mask = cv.inRange(hsv, track1hsv[0], track1hsv[1])
+    track1mask = cv.erode(track1mask, np.ones((3, 3), np.uint8), cv.BORDER_REFLECT)
+    track1mask = cv.dilate(track1mask, np.ones((3, 3), np.uint8), cv.BORDER_REFLECT)
+
+    track2mask = cv.inRange(hsv, track2hsv[0], track2hsv[1])
+    track2mask = cv.erode(track2mask, np.ones((3, 3), np.uint8), cv.BORDER_REFLECT)
+    track2mask = cv.dilate(track2mask, np.ones((3, 3), np.uint8), cv.BORDER_REFLECT)
+
+    bretbymask = cv.inRange(hsv, bretbyhsv[0], bretbyhsv[1])
+
+    track1mask2 = np.zeros_like(track1mask)
+    cv.line(track1mask2, pt1=(1000, 315), pt2=(1070, 1080), color=(255, 255, 255), thickness=100)
+    cv.line(track1mask2, pt1=(980, 310), pt2=(980, 1080), color=(0, 0, 0), thickness=68)
+    track1mask2 = cv.bitwise_and(track1mask, track1mask, mask=track1mask2)
+
+    track2mask2 = np.zeros_like(track2mask)
+    cv.line(track2mask2, pt1=(1085, 335), pt2=(1530, 1080), color=(255, 255, 255), thickness=105)
+    cv.line(track2mask2, pt1=(1065, 335), pt2=(1410, 1080), color=(0, 0, 0), thickness=105)
+    track2mask2 = cv.bitwise_and(track2mask, track2mask, mask=track2mask2)
+
+    cnts1 = cv.findContours(track1mask2.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    cnts2 = cv.findContours(track2mask2.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    cnts3 = cv.findContours(bretbymask.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    cnts1 = imutils.grab_contours(cnts1)
+    cnts2 = imutils.grab_contours(cnts2)
+    cnts3 = imutils.grab_contours(cnts3)
+    (cnts1, _) = contours.sort_contours(cnts1)
+    (cnts2, _) = contours.sort_contours(cnts2)
+    (cnts3, _) = contours.sort_contours(cnts3)
+    return new_frame_gray, new_points, st, err, cnts1, cnts2, cnts3
 
 
 # create masks for drawing purposes
@@ -148,9 +200,7 @@ def format_df():
 
 
 def format_data(i, cam_name, res, tup_1, tup_2):
-
     if not res:
-
         bret_coords_all.append(trail_history[i][0][0])
         bret_coords_all.append(cam_name)
 
@@ -194,21 +244,28 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
             break
 
         try:
-            new_frame_gray, new_points, st, err, mask, cnts = make_mask(new_frame, old_gray, old_points)
+            new_frame_gray, new_points, st, err, cnts1, cnts2, cnts3 = make_mask(new_frame, old_gray, old_points)
+            cntsall = cnts1 + cnts2 + cnts3
         except Exception as e:
             if e:
-                print('dd')
+                print('Nothing to plot')
 
             continue
 
-        for C in cnts:
+        for C in cntsall:
 
-            if cv.contourArea(C) < 250:
+            if cv.contourArea(C) < 500:
                 continue
 
-            coords_array, center = get_box_coords(C, new_frame)
+            coords_array, center, box_area, percent, box, tr = get_box_coords(C, new_frame)
             create_crosshairs(coords_array, center, old_frame, old_gray)
 
+            cv.drawContours(new_frame, [box.astype("int")], -1, (0, 255, 255), 2)
+            cv.putText(new_frame, "Area: " + "{:.2f}".format(box_area * 0.36), (int(tr[0]), int(tr[1])),
+                       cv.FONT_HERSHEY_COMPLEX, 1.0, (209, 80, 0, 255), 2)
+            cv.putText(new_frame, "Percent: " + "{:.2f}".format(percent * 100), (int(tr[0]), int(tr[1]) + 40),
+                       cv.FONT_HERSHEY_COMPLEX, 1.0, (209, 80, 0, 255), 2)
+            return box_area, percent
         # select good points
         if old_points is not None:
             good_new = new_points[st == 1]
@@ -226,8 +283,8 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
             point_color = colour[i].tolist()
 
             for j in range(len(trail_history[i])):
-                trailColor = [int(point_color [0] - (trailFade * j)), int(point_color[1] - (trailFade * j)),
-                              int(point_color [2] - (trailFade * j))]  # fading colors
+                trailColor = [int(point_color[0] - (trailFade * j)), int(point_color[1] - (trailFade * j)),
+                              int(point_color[2] - (trailFade * j))]  # fading colors
                 trailMask = cv.line(trailMask, trail_history[i][j][0], trail_history[i][j][1], trailColor,
                                     thickness=trailThickness, lineType=cv.LINE_AA)
 
@@ -270,9 +327,9 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
 def main_bret(cam_name, caps):
     try:
         fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask = vid_initialise(caps)
-        bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name)
+        box_area, percent = bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name)
+
+        df = format_df()
+        data_processing.bret_loc_data(df, box_area, percent)
     except Exception as e:
         print(e)
-
-    df = format_df()
-    data_processing.bret_loc_data(df)
