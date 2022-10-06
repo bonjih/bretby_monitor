@@ -12,7 +12,7 @@ import subprocess
 def probe_stream(filename):
     """
     Returns a blank dictionary if no stream available
-    Quicker than OpenCV ->takes >20 seconds to time out
+    Quicker than OpenCV ->takes >30 seconds to time out
     ffprobe uses on ffprobe.exe on local drive
     """
     # make sure to download ffprobe.exe
