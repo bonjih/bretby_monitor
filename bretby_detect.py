@@ -47,13 +47,6 @@ LK_params = {
 colour = np.random.randint(0, 255, (100, 3))
 
 
-def calcAreaPercent(tl, tr, bl, C):
-    box_area = (tr[0] - tl[0]) * (bl[1] - tl[1])
-    topmost = tuple(C[C[:, :, 1].argmin()][0])
-    percent = 1 - ((topmost[1] - 340) / 740)
-    return box_area, percent
-
-
 def vid_initialise(path):
     cap = cv.VideoCapture(path)
     cap.set(cv.CAP_PROP_BUFFERSIZE, 2)
@@ -79,6 +72,13 @@ def vid_initialise(path):
         print(e)
 
 
+def calcAreaPercent(tl, tr, bl, C):
+    box_area = (tr[0] - tl[0]) * (bl[1] - tl[1])
+    topmost = tuple(C[C[:, :, 1].argmin()][0])
+    percent = 1 - ((topmost[1] - 340) / 740)
+    return box_area, percent
+
+
 def create_crosshairs(roi_xywh, center, old_frame, old_gray):
     """
     keeps optical flow position inline with HSV parameters
@@ -94,8 +94,8 @@ def create_crosshairs(roi_xywh, center, old_frame, old_gray):
 
 
 def get_hsv_flow():
-    # hsv_low = np.array([0, 73, 96])
-    # hsv_up = np.array([31, 255, 255])
+    hsv_low = np.array([0, 73, 96])
+    hsv_up = np.array([31, 255, 255])
     # hsv_low = np.array([20, 100, 100])
     # hsv_up = np.array([30, 255, 255])
     # hsv_low = np.array([0, 0, 216])
@@ -103,7 +103,6 @@ def get_hsv_flow():
     track1hsv = (np.array([121, 0, 16]), np.array([137, 255, 180]))
     track2hsv = (np.array([0, 0, 94]), np.array([179, 26, 189]))
     bretbyhsv = (np.array([20, 100, 100]), np.array([30, 255, 255]))
-
     return track1hsv, track2hsv, bretbyhsv
 
 
@@ -120,15 +119,30 @@ def get_box_coords(C, new_frame):
     box = cv.boxPoints(box) if imutils.is_cv2() else cv.boxPoints(box)
     box = perspective.order_points(box)
     (tl, tr, br, bl) = box
-    box_area, percent = calcAreaPercent(tl, tr, bl, C)
     coords_array = (tl, tr, br, bl)
     center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
     cv.circle(new_frame, center, 5, (0, 0, 255), -1)
     cv.drawContours(new_frame, [box.astype("int")], -1, (0, 255, 255), 2)
-    return coords_array, center, box_area, percent, box, tr
+    return coords_array, center
 
 
-#
+def get_box_coords_percent(C, new_frame):
+    rect = cv.minAreaRect(C)
+    box = cv.boxPoints(rect)
+    box = perspective.order_points(box)
+    (tl, tr, br, bl) = box
+    box_area, percent = calcAreaPercent(tl, tr, bl, C)
+
+    cv.drawContours(new_frame, [box.astype("int")], -1, (0, 255, 255), 2)
+    cv.putText(new_frame, "Area: " + "{:.2f}".format(box_area * 0.36), (int(tr[0]), int(tr[1])),
+               cv.FONT_HERSHEY_COMPLEX, 1.0, (209, 80, 0, 255), 2)
+    cv.putText(new_frame, "Percent: " + "{:.2f}".format(percent * 100), (int(tr[0]), int(tr[1]) + 40),
+               cv.FONT_HERSHEY_COMPLEX, 1.0, (209, 80, 0, 255), 2)
+    return box_area, percent
+
+
+
+
 # def make_mask(new_frame, old_gray, old_points):
 #     new_frame_gray = cv.cvtColor(new_frame, cv.COLOR_BGR2GRAY)
 #     fgMask = backSub.apply(new_frame_gray)
@@ -191,16 +205,20 @@ bret_data = []
 
 
 def format_df():
-    df = [l.split("' ") for l in ' '.join(map(str, bret_data)).split(' | ')]
-    df = pd.DataFrame(df)
-    df = pd.concat([df[0].str.split(' ', expand=True)], axis=1)
-    df.drop([5], axis=1, inplace=True)
-    df.rename(columns={0: 'x', 1: 'y', 2: 'Camera', 3: 't0', 4: 't1'}, inplace=True)
-    return df
+    if len(bret_data) != 0:
+        df = [l.split("' ") for l in ' '.join(map(str, bret_data)).split(' | ')]
+        df = pd.DataFrame(df)
+        df = pd.concat([df[0].str.split(' ', expand=True)], axis=1)
+        df.drop([5], axis=1, inplace=True)
+        df.rename(columns={0: 'x', 1: 'y', 2: 'Camera', 3: 't0', 4: 't1'}, inplace=True)
+        return df
+    else:
+        pass
 
 
 def format_data(i, cam_name, res, tup_1, tup_2):
     if not res:
+
         bret_coords_all.append(trail_history[i][0][0])
         bret_coords_all.append(cam_name)
 
@@ -229,43 +247,54 @@ def format_data(i, cam_name, res, tup_1, tup_2):
         bret_data.append(time_1)
 
 
-def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
+def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name, stream_time_sec):
     # get total frames calculate stream period
     fps = cap.get(cv.CAP_PROP_FPS)
-    total_frames = stream_time_sec * 2.1
-    frame_counter = 1
+
     video_out = vid_save(fps, old_frame)
 
-    while frame_counter <= total_frames:
+    while stream_time_sec:
         ret, new_frame = cap.read()
-        frame_counter += 1
-
+        _ = divmod(stream_time_sec, 60)
+        time.sleep(1)
+        stream_time_sec -= 1
+        print(stream_time_sec)
         if not ret:
             break
 
         try:
-            new_frame_gray, new_points, st, err, cnts1, cnts2, cnts3 = make_mask(new_frame, old_gray, old_points)
-            cntsall = cnts1 + cnts2 + cnts3
-        except Exception as e:
-            if e:
-                print('Nothing to plot')
+            c = {}
+            keys = [['cnts1'], ['cnts2'], ['cnts_bret']]
+            new_frame_gray, new_points, st, err, cnts1, cnts2, cnts_bret = make_mask(new_frame, old_gray, old_points)
+            cntsall = cnts1 + cnts2
 
+            for i in range(len(keys)):
+                c[keys[i][0]] = cntsall[i]
+            tup_arrays = [(k, c[k]) for k in c]
+
+        except Exception as e:
             continue
 
-        for C in cntsall:
+        if cam_name == 'MNM_PRS_010':
+            for C in cnts2:
+                if cv.contourArea(C) < 1500:
+                    continue
+                box_area_010, percent_010 = get_box_coords_percent(C, new_frame)
 
-            if cv.contourArea(C) < 500:
+        elif cam_name == 'MNM_PRS_137':
+            for C in cnts1:
+
+                if cv.contourArea(C) < 500:
+                    continue
+                box_area_137, percent_137 = get_box_coords_percent(C, new_frame)
+
+        for C_flow in cnts_bret:
+            if cv.contourArea(C_flow) < 250:
                 continue
 
-            coords_array, center, box_area, percent, box, tr = get_box_coords(C, new_frame)
+            coords_array, center = get_box_coords(C_flow, new_frame)
             create_crosshairs(coords_array, center, old_frame, old_gray)
 
-            cv.drawContours(new_frame, [box.astype("int")], -1, (0, 255, 255), 2)
-            cv.putText(new_frame, "Area: " + "{:.2f}".format(box_area * 0.36), (int(tr[0]), int(tr[1])),
-                       cv.FONT_HERSHEY_COMPLEX, 1.0, (209, 80, 0, 255), 2)
-            cv.putText(new_frame, "Percent: " + "{:.2f}".format(percent * 100), (int(tr[0]), int(tr[1]) + 40),
-                       cv.FONT_HERSHEY_COMPLEX, 1.0, (209, 80, 0, 255), 2)
-            return box_area, percent
         # select good points
         if old_points is not None:
             good_new = new_points[st == 1]
@@ -283,8 +312,8 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
             point_color = colour[i].tolist()
 
             for j in range(len(trail_history[i])):
-                trailColor = [int(point_color[0] - (trailFade * j)), int(point_color[1] - (trailFade * j)),
-                              int(point_color[2] - (trailFade * j))]  # fading colors
+                trailColor = [int(point_color [0] - (trailFade * j)), int(point_color[1] - (trailFade * j)),
+                              int(point_color [2] - (trailFade * j))]  # fading colors
                 trailMask = cv.line(trailMask, trail_history[i][j][0], trail_history[i][j][1], trailColor,
                                     thickness=trailThickness, lineType=cv.LINE_AA)
 
@@ -325,11 +354,14 @@ def bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name):
 
 
 def main_bret(cam_name, caps):
-    try:
-        fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask = vid_initialise(caps)
-        box_area, percent = bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name)
+    #try:
+    fps, cap, old_gray, new_frame, old_points, old_frame, crosshairmask = vid_initialise(caps)
+    bret_flow(cap, old_gray, old_points, old_frame, crosshairmask, cam_name, stream_time_sec)
+    df = format_df()
 
-        df = format_df()
-        data_processing.bret_loc_data(df, box_area, percent)
-    except Exception as e:
-        print(e)
+    if df is not None:
+        data_processing.bret_loc_data(df)
+    else:
+        pass
+    # except Exception as e:
+    #     print(e)
