@@ -22,9 +22,17 @@ x_more = -0.39
 y_more = -0.1
 
 
+def check_if_df_empty(df):
+    return len(df.index) == 0
+
+
 def db_manager_controller(data, dbfields):
-    sql = db_manager.SQL(values[4], values[5], values[6], values[7], values[8], values[9])
-    sql.insert(data, dbfields)
+    result = check_if_df_empty(data)
+    if not result:
+        sql = db_manager.SQL(values[4], values[5], values[6], values[7], values[8], values[9])
+        sql.insert(data, dbfields)
+    else:
+        pass
 
 
 def add_x(sum_x):
@@ -32,7 +40,8 @@ def add_x(sum_x):
     adds a proportion to the values in the x
     :return: values x
     """
-    result_x = sum_x * (1+x_more)
+    result_x = sum_x * (1 + x_more)
+
     return result_x
 
 
@@ -47,7 +56,7 @@ def add_y(sum_y):
 
 def greater_x(x, add_x):
     """
-    return True if 'normal' x pix value is greater than y pix value
+    return True if 'normal' x pix value is less than y pix value
     meaning breby has moved up the trough
     :param x:
     :param add_x:
@@ -61,7 +70,7 @@ def greater_x(x, add_x):
 
 def greater_y(y, add_y):
     """
-    return True if 'normal' y pix value is greater than y pix value
+    return True if 'normal' y pix value is less than y pix value
     meaning breby has moved up the trough
     :param x:
     :param add_x:
@@ -74,7 +83,6 @@ def greater_y(y, add_y):
 
 
 def check_eqal(result_x, result_y):
-
     if result_x != result_y:
         return True
     elif result_x == result_x:
@@ -89,8 +97,8 @@ def get_time_diff(df):
 
     df['TimeStamp'] = (df['t0'].astype(float) - df['t1'].astype(float)) / 100000000
     df.TimeStamp = pd.to_datetime(df.TimeStamp, unit='ps')
-    #df['diff'] = (df['TimeStamp'] - df['TimeStamp'].shift(1))
-    #df.drop('TimeStamp', axis=1, inplace=True)
+    # df['diff'] = (df['TimeStamp'] - df['TimeStamp'].shift(1))
+    # df.drop('TimeStamp', axis=1, inplace=True)
 
     return df
 
@@ -102,40 +110,38 @@ def get_change_in_xy(df):
     df = df.loc[df['diff_y'] != 0.0].copy()
     df.reset_index(drop=True, inplace=True)
     df.dropna(inplace=True)
+
     return df
 
 
 # to calculate height of Bretby in the trough
 # assumption, as Bretby height increases, there is coal underneath
 def bret_loc_data(df):
-
-    #try:
+    # try:
     # calc 0.39/0.1% of x/y
-    #df = get_time_diff(df_time)
-    df = get_change_in_xy(df)
+    # df = get_time_diff(df_time)
 
-    df['bretby_x'] = df.apply(lambda row: add_x(float(row['x'])), axis=1)
-    df['bretby_y'] = df.apply(lambda row: add_y(float(row['y'])), axis=1)
+    if not df.empty or not None:
 
-    df['result_x'] = df.apply(lambda row: greater_x(float(row['x']), float(row['bretby_x'])), axis=1)
-    df['result_y'] = df.apply(lambda row: greater_y(float(row['y']), float(row['bretby_y'])), axis=1)
-
-    df['result'] = df.apply(lambda row: check_eqal((row['result_x']), (row['result_y'])), axis=1)
-    df = df[df['result_x'] == False]
-    df.drop('t1', axis=1, inplace=True)
-    df.drop('t0', axis=1, inplace=True)
-    df.drop('x', axis=1, inplace=True)
-    df.drop('y', axis=1, inplace=True)
-    df.drop('diff_x', axis=1, inplace=True)
-    df.drop('diff_y', axis=1, inplace=True)
-    df.drop('result_x', axis=1, inplace=True)
-    df.drop('result_y', axis=1, inplace=True)
-    print(df.to_string())
-
-    db_fields = config_parser.db_parser()
-    db_manager_controller(df, db_fields)
-    # except Exception as e:
-    #     print(e)
+        df = get_change_in_xy(df)
 
 
+        if not df.empty:
+            df['bretby_x'] = df.apply(lambda row: add_x(float(row['x'])), axis=1)
+            df['bretby_y'] = df.apply(lambda row: add_y(float(row['y'])), axis=1)
 
+            df['result_x'] = df.apply(lambda row: greater_x(float(row['x']), float(row['bretby_x'])), axis=1)
+            df['result_y'] = df.apply(lambda row: greater_y(float(row['y']), float(row['bretby_y'])), axis=1)
+
+            df['result'] = df.apply(lambda row: check_eqal((row['result_x']), (row['result_y'])), axis=1)
+
+            df = df[df['result_x'] == False]
+
+            df_pass = df.loc[:, df.columns.drop(['t0', 't1', 'x', 'y', 'diff_x', 'diff_y', 'result_x', 'result_y'])]
+            print(df_pass)
+            db_fields = config_parser.db_parser()
+            db_manager_controller(df_pass, db_fields)
+            # except Exception as e:
+            #     print(e)
+        else:
+            pass
