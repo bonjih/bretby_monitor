@@ -3,6 +3,7 @@ import time
 import pandas as pd
 
 
+bret_coords_all = []
 bret_data = []
 
 
@@ -12,14 +13,13 @@ def format_df():
     if len(bret_data) != 0:
         data_all = [bret_data[i:i + 6] for i in range(0, len(bret_data), 6)]
         df = pd.DataFrame(data_all)
-        df.rename(columns={0: 'Camera', 1: 'x', 2: 'y', 3: 't0', 4: 't1', 5: 'Area'}, inplace=True)
+        df.rename(columns={2: 'Camera', 1: 'x', 0: 'y', 3: 't0', 4: 't1', 5: 'Percentage'}, inplace=True)
         return df
     else:
         pass
 
 
-def format_data(i, cam_name, res, tup_1, tup_2, box_area, trail_history):
-    bret_coords_all = []
+def format_data(i, cam_name, res, tup_1, tup_2, percent, trail_history):
 
     if not res:
         bret_coords_all.append(trail_history[i][0][0])
@@ -43,9 +43,9 @@ def format_data(i, cam_name, res, tup_1, tup_2, box_area, trail_history):
         time_0 = spt_3[2]
         time_1 = spt_3[4]
 
-        bret_data.append(camera)
         bret_data.append(x)
         bret_data.append(y)
+        bret_data.append(camera)
         bret_data.append(time_0)
         bret_data.append(time_1)
-        bret_data.append(box_area)
+        bret_data.append(round(percent, 3))
