@@ -7,6 +7,7 @@ __status__ = "Dev"
 
 import json
 import subprocess
+import time
 
 
 def probe_stream(filename):
@@ -18,14 +19,22 @@ def probe_stream(filename):
     # make sure to download ffprobe.exe
     cmnd = [r'C:\ffmpeg-2022\bin\ffprobe.exe', '-show_format', '-pretty', '-loglevel', 'quiet', '-of', 'json', filename]
     p = subprocess.Popen(cmnd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = p.communicate()
-    p.wait()
-    probe_dct = json.loads(out)
+    s = p.communicate()[0]
 
-    try:
-        if probe_dct:
-            return True
-        elif err:
-            print(err)
-    except Exception as e:
-        print(e)
+    if p.returncode == 0:
+
+        out, err = p.communicate()
+
+        p.wait()
+        probe_dct = json.loads(out)
+
+        try:
+            if probe_dct:
+                return True
+            elif err:
+                print(err)
+        except Exception as e:
+            print(e)
+    else:
+        print(p.returncode)
+        time.sleep(5)
